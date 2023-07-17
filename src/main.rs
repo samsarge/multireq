@@ -1,5 +1,9 @@
 use clap::{Parser, ValueEnum} ;
 
+use hyper::Client;
+use hyper_tls::HttpsConnector;
+
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum HttpMethod {
     GET,
@@ -26,16 +30,20 @@ struct Cli {
 async fn main() {
     let cli = Cli::parse();
 
-    let mut handlers: Vec<tokio::task::JoinHandle<Result<reqwest::Response, reqwest::Error>>> = Vec::with_capacity(cli.amount as usize);
+    let mut handlers: Vec<tokio::task::JoinHandle<Result<hyper::Response<hyper::Body>, hyper::Error>>> = Vec::with_capacity(cli.amount as usize);
+
 
     for _num in 1..=cli.amount {
+        let https = HttpsConnector::new();
+        let client = Client::builder().build::<_, hyper::Body>(https);
 
-        let url = cli.url.to_owned();
+        let uri = cli.url.parse().unwrap();
 
         let task = tokio::spawn(async move {
+            
             match cli.method {
                 HttpMethod::GET => {
-                    reqwest::get(url).await
+                    client.get(uri).await
                 },
                 _ => { todo!("Only GET supported") }
             }
@@ -45,8 +53,14 @@ async fn main() {
     };
 
     for handler in handlers {
-        let res = handler.await.unwrap().unwrap().text().await.unwrap();
-        println!("{}", res);
+        let res = handler.await.unwrap().unwrap();
+        // These are streams, we'll need to read them properly if we want
+        // to display response bodies.
+        // while let Some(next) = res.data().await {
+        //     let chunk = next?;
+        //     io::stdout().write_all(&chunk).await?;
+        // }
+        println!("{:?}", res.body());
     }
 
 }
